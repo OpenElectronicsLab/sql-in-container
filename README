@@ -1,0 +1,25 @@
+sql-in-mariadb-container
+
+	run sql commands and/or load sql files inside of a container
+
+USAGE:
+
+	sql-in-mariadb-container ./dump-20240401.sql "SELECT COUNT(*) FROM t1"
+
+OPTIONS:
+	-b, --build-dir=PATH		[DEFAULT=./build]
+	-m, --mariadb-version=VERSION	[DEFAULT=10.11]
+	-d, --db-schema-name=NAME	[DEFAULT=test]
+	-p, --port=PORT			[DEFAULT=(some free port)]
+	-s, --sql=FILE_OR_COMMAND	Alternative to positional arguments
+	-r, --remain-running		To access the container afterwards
+	-v, --verbose
+	-V, --version			print the version and exit
+	-h, --help			print this message and exit
+
+License
+-------
+GNU General Public License (GPL), version 3 or later.
+See COPYING or https://www.gnu.org/licenses/gpl-3.0.txt for details.
+
+Copyright (C) 2021-2024 Stichting Open Electronics Lab
