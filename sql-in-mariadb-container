@@ -23,8 +23,8 @@ OPTIONS:
 	-b, --base-dir=PATH		[DEFAULT=$DEFAULT_BASE_DIR]
 	-m, --mariadb-version=VERSION	[DEFAULT=$DEFAULT_MARIADB_VERSION]
 	-d, --db-schema-name=NAME	[DEFAULT=$DEFAULT_DB_SCHEMA_NAME]
-	-s, --sql=FILE_OR_COMMAND
 	-p, --port=PORT			[DEFAULT=(some free port)]
+	-s, --sql=FILE_OR_COMMAND	Alternative to positional arguments
 	-r, --remain-running		To access the container afterwards
 	-v, --verbose
 	-V, --version			print $VERSION and exit
@@ -37,8 +37,8 @@ if [[ ! "$VERBOSE" =~ ^-*[0-9]+$ ]]; then
 fi
 
 OPTIONS=$(getopt \
- -o 'b:m:d:s:rp:vVh' \
- --long 'base-dir:,mariadb-version:db-schema-name:,sql:,port:,remain-running,verbose,version,help' \
+ -o 'b:m:d:p:s:rvVh' \
+ --long 'base-dir:,mariadb-version:db-schema-name:,port:,sql:,remain-running,verbose,version,help' \
  -n "$0" -- "$@")
 
 if [ $? -ne 0 ]; then
