@@ -138,7 +138,7 @@ if [ "$VERBOSE" -gt 1 ]; then
 fi
 
 for CMD_OR_FILE in "${SQL[@]}"; do
-	DEBUG "SQL: '$CMD_OR_FILE'"
+	DEBUG "# SQL: '$CMD_OR_FILE'"
 done
 
 if [[ ! "$HOST_DB_PORT" =~ ^[0-9]+$ ]]; then
@@ -148,7 +148,7 @@ if [[ ! "$HOST_DB_PORT" =~ ^[0-9]+$ ]]; then
 	);
 fi
 
-DEBUG HOST_DB_PORT=$HOST_DB_PORT
+DEBUG "# HOST_DB_PORT=$HOST_DB_PORT"
 
 if [ -z "$MARIADB_VERSION" ]; then
 	MARIADB_VERSION=$DEFAULT_MARIADB_VERSION
@@ -178,7 +178,7 @@ CONTAINER_DATA_DIR=/var/lib/mysql
 CONTAINER_DB_DEFAULTS_FILE=$CONTAINER_DATA_DIR/$DB_DEFAULTS_FILE
 
 if [ -e "$LOCAL_DB_DEFAULTS_FILE" ]; then
-	INFO "Data dir already populated: $LOCAL_DATA_DIR"
+	INFO "# Data dir already populated: $LOCAL_DATA_DIR"
 	DB_ROOT_PASSWORD=$(grep 'password=' \
 		"$LOCAL_DB_DEFAULTS_FILE" \
 		| cut -f2 -d'=' \
@@ -190,7 +190,7 @@ else
 		| head --bytes=32 \
 		| xargs || true
 	)
-	DEBUG "LOCAL_DB_DEFAULTS_FILE: $LOCAL_DB_DEFAULTS_FILE"
+	DEBUG "# LOCAL_DB_DEFAULTS_FILE: $LOCAL_DB_DEFAULTS_FILE"
 	cat > "$LOCAL_DB_DEFAULTS_FILE" <<- EOF
 	[client]
 	user=root
@@ -256,12 +256,18 @@ docker run --detach \
 function cleanup-info()
 {
 	if [ $VERBOSE -gt 0 ]; then
+		INFO ""
 		docker container list -f name="${CONTAINER_NAME}"
 	fi
 	if [ "$REMAIN_RUNNING" -eq 0 ]; then
-		DEBUG "stopping container $CONTAINER_NAME"
+		DEBUG ""
+		DEBUG "# stopping container $CONTAINER_NAME"
 		docker stop ${CONTAINER_NAME} > /dev/null
 	else
+		if [ $VERBOSE -ge 0 ]; then
+			INFO ""
+			docker container list -f name="${CONTAINER_NAME}"
+		fi
 		cat <<-EOF
 
 		#
@@ -284,7 +290,7 @@ function cleanup-info()
 }
 trap 'EXIT_CODE=$?; cleanup-info; exit $EXIT_CODE' EXIT
 
-DEBUG "to get CLI: docker exec -it ${CONTAINER_NAME} bash"
+DEBUG "# To get CLI: docker exec -it ${CONTAINER_NAME} bash"
 
 function run-sql()
 {
@@ -294,8 +300,8 @@ function run-sql()
 		SCHEMA=$DB_SCHEMA_NAME
 	fi
 	DEBUG
-	DEBUG "SCHEMA=$SCHEMA"
-	INFO "running: '$SQL_CMD'"
+	DEBUG "# SCHEMA=$SCHEMA"
+	INFO "# $SQL_CMD"
 	docker exec ${CONTAINER_NAME} mariadb \
 		--defaults-file=$CONTAINER_DB_DEFAULTS_FILE \
 		--host=127.0.0.1 \
@@ -308,7 +314,7 @@ function run-sql-file()
 {
 	SQL_FILE=$1
 	BASE_SQL=$(basename $SQL_FILE)
-	DEBUG "# $BASE_SQL"
+	DEBUG "# Sending $BASE_SQL"
 	docker cp -L $SQL_FILE ${CONTAINER_NAME}:/tmp/$BASE_SQL
 	if [ $VERBOSE -gt 0 ]; then
 		 docker exec ${CONTAINER_NAME} ls -l /tmp/$BASE_SQL
@@ -333,21 +339,23 @@ fi
 
 run-sql "SELECT VERSION();"
 
-DEBUG "running scripts"
+DEBUG "# Running scripts"
 for CMD_OR_FILE in "${SQL[@]}"; do
+	DEBUG "# # # # # # # # # # # # # # #"
 	SCRIPT_ERROR=0
 	if [ -e "$CMD_OR_FILE" ]; then
 		SQL_FILE="$CMD_OR_FILE"
-		DEBUG "Loading $SQL_FILE ..."
+		DEBUG "# Loading $SQL_FILE ..."
 		run-sql-file "$SQL_FILE" \
-		&& DEBUG "Loading $SQL_FILE .... Done." \
+		&& DEBUG "# Loading $SQL_FILE .... Done." \
 		|| SCRIPT_ERROR=$?
 	else
-		DEBUG "Running '$CMD_OR_FILE' ..."
+		DEBUG "# Running '$CMD_OR_FILE' ..."
 		run-sql "$CMD_OR_FILE" \
-		&& DEBUG "Running '$CMD_OR_FILE' .... Done" \
+		&& DEBUG "# Running '$CMD_OR_FILE' .... Done" \
 		|| SCRIPT_ERROR=$?
 	fi
+	DEBUG ""
 	if [ $SCRIPT_ERROR != 0 ]; then
 		echo >&2 "$SQL_FILE exited with error $SCRIPT_ERROR"
 		exit $SCRIPT_ERROR
