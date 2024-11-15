@@ -1,0 +1,353 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2021-2024 Stichting Open Electronics Lab
+
+set -e
+set -o pipefail
+
+VERSION=0.0.1
+DEFAULT_MARIADB_VERSION=10.11
+DEFAULT_BUILD_DIR=./build
+DEFAULT_DB_SCHEMA_NAME=test
+REMAIN_RUNNING=0
+
+function usage()
+{
+	SCRIPT=$(basename $0)
+	cat <<EOF
+$SCRIPT version $VERSION
+
+	run sql commands and/or load sql files inside of a container
+
+OPTIONS:
+	-b, --build-dir=PATH		[DEFAULT=$DEFAULT_BUILD_DIR]
+	-m, --mariadb-version=VERSION	[DEFAULT=$DEFAULT_MARIADB_VERSION]
+	-d, --db-schema-name=NAME	[DEFAULT=$DEFAULT_DB_SCHEMA_NAME]
+	-s, --sql=FILE_OR_COMMAND
+	-p, --port=PORT			[DEFAULT=(some free port)]
+	-r, --remain-running		To access the container afterwards
+	-v, --verbose
+	-V, --version			print $VERSION and exit
+	-h, --help			print this message and exit
+EOF
+}
+
+if [[ ! "$VERBOSE" =~ ^-*[0-9]+$ ]]; then
+	VERBOSE=0
+fi
+
+OPTIONS=$(getopt \
+ -o 'b:m:d:s:rp:vVh' \
+ --long 'build-dir:,mariadb-version:db-schema-name:,sql:,port:,remain-running,verbose,version,help' \
+ -n "$0" -- "$@")
+
+if [ $? -ne 0 ]; then
+	echo >&2 'Terminating...'
+	exit 1
+fi
+
+# Note the quotes around "$OPTIONS": they are essential
+eval set -- "$OPTIONS"
+unset OPTIONS
+
+SQL=()
+
+while true; do
+	case "$1" in
+		'-b'|'--build-dir')
+			BUILD_DIR=$2
+			shift 2
+			continue
+		;;
+		'-m'|'--mariadb-version')
+			MARIADB_VERSION=$2
+			shift 2
+			continue
+		;;
+		'-d'|'--db-schema-name')
+			DB_SCHEMA_NAME=$2
+			shift 2
+			continue
+		;;
+		'-s'|'--sql')
+			SQL+=( "$2" )
+			shift 2
+			continue
+		;;
+		'-r'|'--remain-running')
+			REMAIN_RUNNING=1
+			shift 1
+		;;
+		'-p'|'--port')
+			if [[ ! "$2" =~ ^[0-9]+$ ]]; then
+				echo >&2 "port not an integer? '$2'"
+				exit 1
+			fi
+			HOST_DB_PORT=$2
+			shift 2
+			continue
+		;;
+		'-v'|'--verbose')
+			VERBOSE=$(( $VERBOSE + 1 ))
+			shift 1
+			continue
+		;;
+		'-V'|'--version')
+			echo "$VERSION"
+			exit 0
+		;;
+		'-h'|'--help')
+			usage
+			exit 0
+		;;
+		'--')
+			shift
+			break
+		;;
+		*)
+			echo >&2 'Internal error!'
+			exit 1
+		;;
+	esac
+done
+
+for ARG in "$@"; do
+	SQL+=( "$ARG" )
+done
+
+# if --verbose=-1 we will be silent
+function INFO()
+{
+	if [ $VERBOSE -ge 0 ]; then
+		echo "$@"
+	fi
+}
+
+function DEBUG()
+{
+	if [ $VERBOSE -gt 0 ]; then
+		echo "$@"
+	fi
+}
+if [ "$VERBOSE" -gt 0 ]; then
+	OPTIONAL_DASH_V=-v
+fi
+
+if [ "$VERBOSE" -gt 1 ]; then
+	set -x
+fi
+
+for CMD_OR_FILE in "${SQL[@]}"; do
+	DEBUG "SQL: '$CMD_OR_FILE'"
+done
+
+if [[ ! "$HOST_DB_PORT" =~ ^[0-9]+$ ]]; then
+	HOST_DB_PORT=$(
+		perl -E 'use IO::Socket::INET;
+			 say IO::Socket::INET->new(Listen => 1)->sockport'
+	);
+fi
+
+DEBUG HOST_DB_PORT=$HOST_DB_PORT
+
+if [ -z "$MARIADB_VERSION" ]; then
+	MARIADB_VERSION=$DEFAULT_MARIADB_VERSION
+fi
+
+if [ -z "$DB_SCHEMA_NAME" ]; then
+	DB_SCHEMA_NAME=$DEFAULT_DB_SCHEMA_NAME
+fi
+
+if [ -z "$BUILD_DIR" ]; then
+	BUILD_DIR=$DEFAULT_BUILD_DIR
+fi
+mkdir -p $OPTIONAL_DASH_V $BUILD_DIR
+BUILD_DIR=$(readlink -f "$BUILD_DIR")
+
+if [ -z "$LOCAL_DATA_DIR" ]; then
+	LOCAL_DATA_DIR=$BUILD_DIR/mariadb-data
+fi
+mkdir -p $OPTIONAL_DASH_V "$LOCAL_DATA_DIR"
+LOCAL_DATA_DIR=$(readlink -f "$LOCAL_DATA_DIR")
+
+CONTAINER_IMAGE=mariadb:$MARIADB_VERSION
+CONTAINER_NAME=${USER}-${DB_SCHEMA_NAME}-mariadb-${MARIADB_VERSION}
+DB_DEFAULTS_FILE=${DB_SCHEMA_NAME}.root.my.cnf
+LOCAL_DB_DEFAULTS_FILE=$LOCAL_DATA_DIR/$DB_DEFAULTS_FILE
+CONTAINER_DATA_DIR=/var/lib/mysql
+CONTAINER_DB_DEFAULTS_FILE=$CONTAINER_DATA_DIR/$DB_DEFAULTS_FILE
+
+if [ -e "$LOCAL_DB_DEFAULTS_FILE" ]; then
+	INFO "Data dir already populated: $LOCAL_DATA_DIR"
+	DB_ROOT_PASSWORD=$(grep 'password=' \
+		"$LOCAL_DB_DEFAULTS_FILE" \
+		| cut -f2 -d'=' \
+		| xargs )
+else
+	DEBUG "#    creating new password from /dev/urandom"
+	DB_ROOT_PASSWORD=$(cat /dev/urandom \
+		| tr --delete --complement 'a-zA-Z0-9' \
+		| head --bytes=32 \
+		| xargs || true
+	)
+	DEBUG "LOCAL_DB_DEFAULTS_FILE: $LOCAL_DB_DEFAULTS_FILE"
+	cat > "$LOCAL_DB_DEFAULTS_FILE" <<- EOF
+	[client]
+	user=root
+	password=$DB_ROOT_PASSWORD
+	EOF
+fi
+DB_USER_NAME=$DB_SCHEMA_NAME
+DB_USER_PASSWORD=$DB_ROOT_PASSWORD
+
+if [ -e $BUILD_DIR/container.env ]; then
+	mv $OPTIONAL_DASH_V \
+		$BUILD_DIR/container.env \
+		$BUILD_DIR/container.env.old
+fi
+touch $BUILD_DIR/container.env
+chmod $OPTIONAL_DASH_V 600 $BUILD_DIR/container.env
+cat > $BUILD_DIR/container.env << EOF
+DB_SCHEMA_NAME=$DB_SCHEMA_NAME
+DB_ROOT_PASSWORD=$DB_ROOT_PASSWORD
+DB_USER_NAME=$DB_USER_NAME
+DB_USER_PASSWORD=$DB_USER_PASSWORD
+
+HOST_DB_PORT=$HOST_DB_PORT
+CONTAINER_NAME=$CONTAINER_NAME
+CONTAINER_IMAGE=$CONTAINER_IMAGE
+
+LOCAL_DB_DEFAULTS_FILE=$LOCAL_DB_DEFAULTS_FILE
+CONTAINER_DB_DEFAULTS_FILE=$CONTAINER_DB_DEFAULTS_FILE
+EOF
+if [ $VERBOSE -gt 0 ]; then
+	ls -l $BUILD_DIR/container.env
+fi
+
+DEBUG "# check user '$USER' for group 'docker' membership"
+if groups | grep -q docker; then
+	DEBUG "#    user '$USER' is member of 'docker' group (ok)"
+else
+	INFO
+	INFO '# ------------------------------------------'
+	INFO "# user $USER not in group 'docker'"
+	INFO "# groups are: $(groups | sed -e's/\s/\n\t/g')"
+	INFO '# consider:'
+	INFO "    sudo usermod -a -G docker $USER"
+	INFO '# ------------------------------------------'
+	INFO
+fi
+
+DEBUG '# ensure db container is not already running'
+docker stop ${CONTAINER_NAME} 2>/dev/null || true
+
+DEBUG '# start db container'
+docker run --detach \
+	--publish 127.0.0.1:$HOST_DB_PORT:3306 \
+	--mount src="$LOCAL_DATA_DIR",target="$CONTAINER_DATA_DIR",type=bind \
+	--name "$CONTAINER_NAME" \
+	--env "MYSQL_DATABASE=$DB_SCHEMA_NAME" \
+	--env "MYSQL_USER=$DB_USER_NAME" \
+	--env "MYSQL_PASSWORD=$DB_USER_PASSWORD" \
+	--env "MYSQL_ROOT_PASSWORD=$DB_ROOT_PASSWORD" \
+	--rm \
+	$CONTAINER_IMAGE
+
+function cleanup-info()
+{
+	if [ $VERBOSE -gt 0 ]; then
+		docker container list -f name="${CONTAINER_NAME}"
+	fi
+	if [ "$REMAIN_RUNNING" -eq 0 ]; then
+		DEBUG "stopping container $CONTAINER_NAME"
+		docker stop ${CONTAINER_NAME} > /dev/null
+	else
+		cat <<-EOF
+
+		#
+		# Connect to the database with:
+		#
+			 docker exec -it ${CONTAINER_NAME} mariadb \\
+				  --defaults-file=$CONTAINER_DB_DEFAULTS_FILE \\
+				  --host=127.0.0.1 \\
+				  --port=3306 \\
+				  $DB_SCHEMA_NAME
+		#
+		#
+		#
+		# stop the instance with:
+		     docker stop ${CONTAINER_NAME}
+		#
+		#
+		EOF
+	fi
+}
+trap 'EXIT_CODE=$?; cleanup-info; exit $EXIT_CODE' EXIT
+
+# docker exec -it ${CONTAINER_NAME} bash
+
+function run-sql()
+{
+	SQL_CMD=$1
+	SCHEMA=$2
+	if [ -z "$SCHEMA" ]; then
+		SCHEMA=$DB_SCHEMA_NAME
+	fi
+	DEBUG "SCHEMA=$SCHEMA"
+	DEBUG
+	INFO "running: '$SQL_CMD'"
+	docker exec ${CONTAINER_NAME} mariadb \
+		--defaults-file=$CONTAINER_DB_DEFAULTS_FILE \
+		--host=127.0.0.1 \
+		--port=3306 \
+		$DB_SCHEMA_NAME \
+		-e "$SQL_CMD"
+}
+
+function run-sql-file()
+{
+	SQL_FILE=$1
+	BASE_SQL=$(basename $SQL_FILE)
+	DEBUG "# $BASE_SQL"
+	docker cp -L $SQL_FILE ${CONTAINER_NAME}:/tmp/$BASE_SQL
+	# docker exec ${CONTAINER_NAME} ls -l /tmp/$BASE_SQL
+	run-sql "source /tmp/$BASE_SQL"
+	docker exec ${CONTAINER_NAME} rm $OPTIONAL_DASH_V /tmp/$BASE_SQL
+}
+
+RETRIES_LEFT=10
+while [ $RETRIES_LEFT -gt 0 ]; do
+	if run-sql "SELECT 1" >/dev/null 2>&1; then
+		RETRIES_LEFT=0
+	else
+		RETRIES_LEFT=$(( $RETRIES_LEFT - 1 ))
+		sleep 1;
+	fi
+done
+
+if [ $VERBOSE -gt 0 ]; then
+	run-sql "SHOW DATABASES;" mysql
+fi
+
+run-sql "SELECT VERSION();"
+
+DEBUG "running scripts"
+for CMD_OR_FILE in "${SQL[@]}"; do
+	SCRIPT_ERROR=0
+	if [ -e "$CMD_OR_FILE" ]; then
+		SQL_FILE="$CMD_OR_FILE"
+		DEBUG "Loading $SQL_FILE ..."
+		run-sql-file "$SQL_FILE" \
+		&& DEBUG "Loading $SQL_FILE .... Done." \
+		|| SCRIPT_ERROR=$?
+	else
+		DEBUG "Running '$CMD_OR_FILE' ..."
+		run-sql "$CMD_OR_FILE" \
+		&& DEBUG "Running '$CMD_OR_FILE' .... Done" \
+		|| SCRIPT_ERROR=$?
+	fi
+	if [ $SCRIPT_ERROR != 0 ]; then
+		echo >&2 "$SQL_FILE exited with error $SCRIPT_ERROR"
+		exit $SCRIPT_ERROR
+	fi
+done
