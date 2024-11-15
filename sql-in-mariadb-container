@@ -284,7 +284,7 @@ function cleanup-info()
 }
 trap 'EXIT_CODE=$?; cleanup-info; exit $EXIT_CODE' EXIT
 
-# docker exec -it ${CONTAINER_NAME} bash
+DEBUG "to get CLI: docker exec -it ${CONTAINER_NAME} bash"
 
 function run-sql()
 {
@@ -293,8 +293,8 @@ function run-sql()
 	if [ -z "$SCHEMA" ]; then
 		SCHEMA=$DB_SCHEMA_NAME
 	fi
-	DEBUG "SCHEMA=$SCHEMA"
 	DEBUG
+	DEBUG "SCHEMA=$SCHEMA"
 	INFO "running: '$SQL_CMD'"
 	docker exec ${CONTAINER_NAME} mariadb \
 		--defaults-file=$CONTAINER_DB_DEFAULTS_FILE \
@@ -310,7 +310,9 @@ function run-sql-file()
 	BASE_SQL=$(basename $SQL_FILE)
 	DEBUG "# $BASE_SQL"
 	docker cp -L $SQL_FILE ${CONTAINER_NAME}:/tmp/$BASE_SQL
-	# docker exec ${CONTAINER_NAME} ls -l /tmp/$BASE_SQL
+	if [ $VERBOSE -gt 0 ]; then
+		 docker exec ${CONTAINER_NAME} ls -l /tmp/$BASE_SQL
+	fi
 	run-sql "source /tmp/$BASE_SQL"
 	docker exec ${CONTAINER_NAME} rm $OPTIONAL_DASH_V /tmp/$BASE_SQL
 }
