@@ -7,7 +7,7 @@ USAGE:
 	sql-in-mariadb-container ./dump-20240401.sql "SELECT COUNT(*) FROM t1"
 
 OPTIONS:
-	-b, --base-dir=PATH		[DEFAULT=./build]
+	-b, --base-dir=PATH		[DEFAULT=./data]
 	-m, --mariadb-version=VERSION	[DEFAULT=10.11]
 	-d, --db-schema-name=NAME	[DEFAULT=test]
 	-p, --port=PORT			[DEFAULT=(some free port)]
