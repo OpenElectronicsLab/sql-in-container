@@ -300,7 +300,7 @@ function run-sql()
 		--defaults-file=$CONTAINER_DB_DEFAULTS_FILE \
 		--host=127.0.0.1 \
 		--port=3306 \
-		$DB_SCHEMA_NAME \
+		$SCHEMA \
 		-e "$SQL_CMD"
 }
 
