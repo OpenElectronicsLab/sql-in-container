@@ -38,7 +38,7 @@ fi
 
 OPTIONS=$(getopt \
  -o 'b:m:d:p:s:rvVh' \
- --long 'base-dir:,mariadb-version:db-schema-name:,port:,sql:,remain-running,verbose,version,help' \
+ --long 'base-dir:,mariadb-version:,db-schema-name:,port:,sql:,remain-running,verbose,version,help' \
  -n "$0" -- "$@")
 
 if [ $? -ne 0 ]; then
