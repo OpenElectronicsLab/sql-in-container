@@ -7,7 +7,7 @@ set -o pipefail
 
 VERSION=0.0.1
 DEFAULT_MARIADB_VERSION=10.11
-DEFAULT_BUILD_DIR=./build
+DEFAULT_BASE_DIR=./data
 DEFAULT_DB_SCHEMA_NAME=test
 REMAIN_RUNNING=0
 
@@ -20,7 +20,7 @@ $SCRIPT version $VERSION
 	run sql commands and/or load sql files inside of a container
 
 OPTIONS:
-	-b, --build-dir=PATH		[DEFAULT=$DEFAULT_BUILD_DIR]
+	-b, --base-dir=PATH		[DEFAULT=$DEFAULT_BASE_DIR]
 	-m, --mariadb-version=VERSION	[DEFAULT=$DEFAULT_MARIADB_VERSION]
 	-d, --db-schema-name=NAME	[DEFAULT=$DEFAULT_DB_SCHEMA_NAME]
 	-s, --sql=FILE_OR_COMMAND
@@ -38,7 +38,7 @@ fi
 
 OPTIONS=$(getopt \
  -o 'b:m:d:s:rp:vVh' \
- --long 'build-dir:,mariadb-version:db-schema-name:,sql:,port:,remain-running,verbose,version,help' \
+ --long 'base-dir:,mariadb-version:db-schema-name:,sql:,port:,remain-running,verbose,version,help' \
  -n "$0" -- "$@")
 
 if [ $? -ne 0 ]; then
@@ -54,8 +54,8 @@ SQL=()
 
 while true; do
 	case "$1" in
-		'-b'|'--build-dir')
-			BUILD_DIR=$2
+		'-b'|'--base-dir')
+			BASE_DIR=$2
 			shift 2
 			continue
 		;;
@@ -158,14 +158,14 @@ if [ -z "$DB_SCHEMA_NAME" ]; then
 	DB_SCHEMA_NAME=$DEFAULT_DB_SCHEMA_NAME
 fi
 
-if [ -z "$BUILD_DIR" ]; then
-	BUILD_DIR=$DEFAULT_BUILD_DIR
+if [ -z "$BASE_DIR" ]; then
+	BASE_DIR=$DEFAULT_BASE_DIR
 fi
-mkdir -p $OPTIONAL_DASH_V $BUILD_DIR
-BUILD_DIR=$(readlink -f "$BUILD_DIR")
+mkdir -p $OPTIONAL_DASH_V $BASE_DIR
+BASE_DIR=$(readlink -f "$BASE_DIR")
 
 if [ -z "$LOCAL_DATA_DIR" ]; then
-	LOCAL_DATA_DIR=$BUILD_DIR/mariadb-data
+	LOCAL_DATA_DIR=$BASE_DIR/mariadb-data
 fi
 mkdir -p $OPTIONAL_DASH_V "$LOCAL_DATA_DIR"
 LOCAL_DATA_DIR=$(readlink -f "$LOCAL_DATA_DIR")
@@ -200,14 +200,14 @@ fi
 DB_USER_NAME=$DB_SCHEMA_NAME
 DB_USER_PASSWORD=$DB_ROOT_PASSWORD
 
-if [ -e $BUILD_DIR/container.env ]; then
+if [ -e $BASE_DIR/container.env ]; then
 	mv $OPTIONAL_DASH_V \
-		$BUILD_DIR/container.env \
-		$BUILD_DIR/container.env.old
+		$BASE_DIR/container.env \
+		$BASE_DIR/container.env.old
 fi
-touch $BUILD_DIR/container.env
-chmod $OPTIONAL_DASH_V 600 $BUILD_DIR/container.env
-cat > $BUILD_DIR/container.env << EOF
+touch $BASE_DIR/container.env
+chmod $OPTIONAL_DASH_V 600 $BASE_DIR/container.env
+cat > $BASE_DIR/container.env << EOF
 DB_SCHEMA_NAME=$DB_SCHEMA_NAME
 DB_ROOT_PASSWORD=$DB_ROOT_PASSWORD
 DB_USER_NAME=$DB_USER_NAME
@@ -221,7 +221,7 @@ LOCAL_DB_DEFAULTS_FILE=$LOCAL_DB_DEFAULTS_FILE
 CONTAINER_DB_DEFAULTS_FILE=$CONTAINER_DB_DEFAULTS_FILE
 EOF
 if [ $VERBOSE -gt 0 ]; then
-	ls -l $BUILD_DIR/container.env
+	ls -l $BASE_DIR/container.env
 fi
 
 DEBUG "# check user '$USER' for group 'docker' membership"
