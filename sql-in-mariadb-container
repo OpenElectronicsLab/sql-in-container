@@ -357,7 +357,7 @@ for CMD_OR_FILE in "${SQL[@]}"; do
 	fi
 	DEBUG ""
 	if [ $SCRIPT_ERROR != 0 ]; then
-		echo >&2 "$SQL_FILE exited with error $SCRIPT_ERROR"
+		echo >&2 "'$CMD_OR_FILE' exited with error $SCRIPT_ERROR"
 		exit $SCRIPT_ERROR
 	fi
 done
