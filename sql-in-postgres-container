@@ -1,0 +1,339 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2021-2024 Stichting Open Electronics Lab
+
+set -e
+set -o pipefail
+
+VERSION=0.0.1
+DEFAULT_POSTGRES_VERSION=17
+DEFAULT_HOST_DATA_DIR=./var/lib/postgresql/data
+DEFAULT_POSTGRES_DB=test
+REMAIN_RUNNING=0
+
+function usage()
+{
+	SCRIPT=$(basename $0)
+	cat <<EOF
+$SCRIPT version $VERSION
+
+	run sql commands and/or load sql files inside of a container
+
+OPTIONS:
+	-b, --base-data-dir=PATH	[DEFAULT=$DEFAULT_HOST_DATA_DIR]
+	-m, --postgres-version=VERSION	[DEFAULT=$DEFAULT_POSTGRES_VERSION]
+	-p, --port=PORT			[DEFAULT=(some free port)]
+	-s, --sql=FILE_OR_COMMAND	Alternative to positional arguments
+	-r, --remain-running		To access the container afterwards
+	-v, --verbose
+	-V, --version			print $VERSION and exit
+	-h, --help			print this message and exit
+EOF
+}
+
+if [[ ! "$VERBOSE" =~ ^-*[0-9]+$ ]]; then
+	VERBOSE=0
+fi
+
+OPTIONS=$(getopt \
+ -o 'b:m:p:s:rvVh' \
+ --long 'base-data-dir:,postgres-version:,port:,sql:,remain-running,verbose,version,help' \
+ -n "$0" -- "$@")
+
+if [ $? -ne 0 ]; then
+	echo >&2 'Terminating...'
+	exit 1
+fi
+
+# Note the quotes around "$OPTIONS": they are essential
+eval set -- "$OPTIONS"
+unset OPTIONS
+
+SQL=()
+
+while true; do
+	case "$1" in
+		'-b'|'--base-data-dir')
+			HOST_DATA_DIR=$2
+			shift 2
+			continue
+		;;
+		'-m'|'--postgres-version')
+			POSTGRES_VERSION=$2
+			shift 2
+			continue
+		;;
+		'-s'|'--sql')
+			SQL+=( "$2" )
+			shift 2
+			continue
+		;;
+		'-r'|'--remain-running')
+			REMAIN_RUNNING=1
+			shift 1
+		;;
+		'-p'|'--port')
+			if [[ ! "$2" =~ ^[0-9]+$ ]]; then
+				echo >&2 "port not an integer? '$2'"
+				exit 1
+			fi
+			HOST_DB_PORT=$2
+			shift 2
+			continue
+		;;
+		'-v'|'--verbose')
+			VERBOSE=$(( $VERBOSE + 1 ))
+			shift 1
+			continue
+		;;
+		'-V'|'--version')
+			echo "$VERSION"
+			exit 0
+		;;
+		'-h'|'--help')
+			usage
+			exit 0
+		;;
+		'--')
+			shift
+			break
+		;;
+		*)
+			echo >&2 'Internal error!'
+			exit 1
+		;;
+	esac
+done
+
+for ARG in "$@"; do
+	SQL+=( "$ARG" )
+done
+
+# if --verbose=-1 we will be silent
+function INFO()
+{
+	if [ $VERBOSE -ge 0 ]; then
+		echo "$@"
+	fi
+}
+
+function DEBUG()
+{
+	if [ $VERBOSE -gt 0 ]; then
+		echo "$@"
+	fi
+}
+if [ "$VERBOSE" -gt 0 ]; then
+	OPTIONAL_DASH_V=-v
+fi
+
+if [ "$VERBOSE" -gt 1 ]; then
+	set -x
+fi
+
+for CMD_OR_FILE in "${SQL[@]}"; do
+	DEBUG "# SQL: '$CMD_OR_FILE'"
+done
+
+if [[ ! "$HOST_DB_PORT" =~ ^[0-9]+$ ]]; then
+	HOST_DB_PORT=$(
+		perl -E 'use IO::Socket::INET;
+			 say IO::Socket::INET->new(Listen => 1)->sockport'
+	);
+fi
+
+DEBUG "# HOST_DB_PORT=$HOST_DB_PORT"
+
+if [ -z "$POSTGRES_VERSION" ]; then
+	POSTGRES_VERSION=$DEFAULT_POSTGRES_VERSION
+fi
+
+if [ -z "$POSTGRES_DB" ]; then
+	POSTGRES_DB=$DEFAULT_POSTGRES_DB
+fi
+
+if [ -z "$HOST_DATA_DIR" ]; then
+	HOST_DATA_DIR=$DEFAULT_HOST_DATA_DIR
+fi
+mkdir -p $OPTIONAL_DASH_V "$HOST_DATA_DIR"
+HOST_DATA_DIR=$(readlink -f "$HOST_DATA_DIR")
+
+CONTAINER_IMAGE=postgres:$POSTGRES_VERSION
+CONTAINER_NAME=${USER}-${POSTGRES_DB}-postgres-${POSTGRES_VERSION}
+CONTAINER_DATA_DIR=/var/lib/postgresql/data
+
+HOST_POSTGRES_PASSWORD_FILE=$HOST_DATA_DIR/postgress.passwd
+CONTAINER_POSTGRES_PASSWORD_FILE=$CONTAINER_DATA_DIR/postgress.passwd
+if [ -e "$HOST_POSTGRES_PASSWORD_FILE" ]; then
+	INFO "# HOST_POSTGRES_PASSWORD_FILE $HOST_POSTGRES_PASSWORD_FILE exists"
+else
+	INFO "# HOST_POSTGRES_PASSWORD_FILE $HOST_POSTGRES_PASSWORD_FILE absent"
+	INFO "# creating $HOST_POSTGRES_PASSWORD_FILE from /dev/urandom"
+	touch $HOST_POSTGRES_PASSWORD_FILE
+	chmod $OPTIONAL_DASH_V 600 $HOST_POSTGRES_PASSWORD_FILE
+	RND_ALPHA_NUMERIC=$(cat /dev/urandom \
+		| tr --delete --complement 'a-zA-Z0-9' \
+		| head --bytes=32 \
+		|| true)
+	if [ ${#RND_ALPHA_NUMERIC} -eq 32 ]; then
+		echo "$RND_ALPHA_NUMERIC" > $HOST_POSTGRES_PASSWORD_FILE
+	else
+		echo >&2 "RND_ALPHA_NUMERIC='$RND_ALPHA_NUMERIC'"
+		exit 1
+	fi
+fi
+
+if [ -e $HOST_DATA_DIR/container.env ]; then
+	mv $OPTIONAL_DASH_V \
+		$HOST_DATA_DIR/container.env \
+		$HOST_DATA_DIR/container.env.old
+fi
+touch $HOST_DATA_DIR/container.env
+chmod $OPTIONAL_DASH_V 600 $HOST_DATA_DIR/container.env
+cat > $HOST_DATA_DIR/container.env << EOF
+HOST_DB_PORT=$HOST_DB_PORT
+CONTAINER_NAME=$CONTAINER_NAME
+CONTAINER_IMAGE=$CONTAINER_IMAGE
+HOST_POSTGRES_PASSWORD_FILE=$HOST_POSTGRES_PASSWORD_FILE
+POSTGRES_PASSWORD_FILE=$CONTAINER_POSTGRES_PASSWORD_FILE
+EOF
+if [ $VERBOSE -gt 0 ]; then
+	ls -l $HOST_DATA_DIR/container.env
+fi
+
+DEBUG "# check user '$USER' for group 'docker' membership"
+if groups | grep -q docker; then
+	DEBUG "#    user '$USER' is member of 'docker' group (ok)"
+else
+	INFO
+	INFO '# ------------------------------------------'
+	INFO "# user $USER not in group 'docker'"
+	INFO "# groups are: $(groups | sed -e's/\s/\n\t/g')"
+	INFO '# consider:'
+	INFO "    sudo usermod -a -G docker $USER"
+	INFO '# ------------------------------------------'
+	INFO
+fi
+
+DEBUG '# ensure db container is not already running'
+docker stop ${CONTAINER_NAME} 2>/dev/null || true
+
+DEBUG '# start db container'
+	#--env "POSTGRES_DATABASE=$POSTGRES_DB" \
+
+docker run --detach \
+	--publish 127.0.0.1:$HOST_DB_PORT:5432 \
+        --mount src="$HOST_DATA_DIR",target="$CONTAINER_DATA_DIR",type=bind \
+	--name "$CONTAINER_NAME" \
+	--env PGDATA=$CONTAINER_DATA_DIR/pgdata \
+	--env POSTGRES_PASSWORD_FILE=$CONTAINER_POSTGRES_PASSWORD_FILE \
+	--rm \
+	$CONTAINER_IMAGE
+
+function cleanup-info()
+{
+	if [ $VERBOSE -gt 0 ]; then
+		INFO ""
+		docker container list -f name="${CONTAINER_NAME}"
+	fi
+	if [ "$REMAIN_RUNNING" -eq 0 ]; then
+		DEBUG ""
+		DEBUG "# stopping container $CONTAINER_NAME"
+		docker stop ${CONTAINER_NAME} > /dev/null
+	else
+		if [ $VERBOSE -ge 0 ]; then
+			INFO ""
+			docker container list -f name="${CONTAINER_NAME}"
+		fi
+		cat <<-EOF
+
+		#
+		# Connect to the database with:
+		#
+			 docker exec -it \\
+				  --env PGHOST=127.0.0.1 \\
+				  --env PGPORT=5432 \\
+				  --env PGPASSFILE=$CONTAINER_POSTGRES_PASSWORD_FILE \\
+				  ${CONTAINER_NAME} \\
+				  /usr/bin/psql --user=postgres
+		#
+		#
+		#
+		# stop the instance with:
+		     docker stop ${CONTAINER_NAME}
+		#
+		#
+		EOF
+	fi
+}
+trap 'EXIT_CODE=$?; cleanup-info; exit $EXIT_CODE' EXIT
+
+DEBUG "# To get CLI: docker exec -it ${CONTAINER_NAME} bash"
+
+function run-sql()
+{
+	SQL_CMD=$1
+	INFO "# $SQL_CMD"
+	docker exec \
+		--env PGHOST=127.0.0.1 \
+		--env PGPORT=5432 \
+		--env PGPASSFILE=$CONTAINER_POSTGRES_PASSWORD_FILE \
+		${CONTAINER_NAME} \
+		/usr/bin/psql --user=postgres \
+			--command="$SQL_CMD"
+}
+
+function run-sql-file()
+{
+	SQL_FILE=$1
+	BASE_SQL=$(basename $SQL_FILE)
+	DEBUG "# Sending $BASE_SQL"
+	docker cp -L $SQL_FILE ${CONTAINER_NAME}:/tmp/$BASE_SQL
+	if [ $VERBOSE -gt 0 ]; then
+		 docker exec ${CONTAINER_NAME} ls -l /tmp/$BASE_SQL
+	fi
+	INFO "# $SQL_CMD"
+	docker exec \
+		--env PGHOST=127.0.0.1 \
+		--env PGPORT=5432 \
+		--env PGPASSFILE=$CONTAINER_POSTGRES_PASSWORD_FILE \
+		${CONTAINER_NAME} \
+		/usr/bin/psql --user=postgres \
+			--file="/tmp/$BASE_SQL"
+	docker exec ${CONTAINER_NAME} rm $OPTIONAL_DASH_V /tmp/$BASE_SQL
+}
+
+RETRIES_LEFT=10
+while [ $RETRIES_LEFT -gt 0 ]; do
+	if run-sql "SELECT 1 AS ping" >/dev/null 2>&1; then
+		RETRIES_LEFT=0
+	else
+		RETRIES_LEFT=$(( $RETRIES_LEFT - 1 ))
+		sleep 1;
+	fi
+done
+
+run-sql "SELECT VERSION();"
+
+DEBUG "# Running scripts"
+for CMD_OR_FILE in "${SQL[@]}"; do
+	DEBUG "# # # # # # # # # # # # # # #"
+	SCRIPT_ERROR=0
+	if [ -e "$CMD_OR_FILE" ]; then
+		SQL_FILE="$CMD_OR_FILE"
+		DEBUG "# Loading $SQL_FILE ..."
+		run-sql-file "$SQL_FILE" \
+		&& DEBUG "# Loading $SQL_FILE .... Done." \
+		|| SCRIPT_ERROR=$?
+	else
+		DEBUG "# Running '$CMD_OR_FILE' ..."
+		run-sql "$CMD_OR_FILE" \
+		&& DEBUG "# Running '$CMD_OR_FILE' .... Done" \
+		|| SCRIPT_ERROR=$?
+	fi
+	DEBUG ""
+	if [ $SCRIPT_ERROR != 0 ]; then
+		echo >&2 "'$CMD_OR_FILE' exited with error $SCRIPT_ERROR"
+		exit $SCRIPT_ERROR
+	fi
+done
