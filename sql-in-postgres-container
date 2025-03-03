@@ -21,11 +21,11 @@ $SCRIPT version $VERSION
 
 USAGE:
 
-	$0 ./foo.sql "SELECT * FROM foo"
+	$0 $(dirname $0)/example.sql "SELECT COUNT(*) FROM foo"
 
 OPTIONS:
 	-b, --base-data-dir=PATH	[DEFAULT=$DEFAULT_HOST_DATA_DIR]
-	-m, --postgres-version=VERSION	[DEFAULT=$DEFAULT_POSTGRES_VERSION]
+	-c, --container-version=VERSION	[DEFAULT=$DEFAULT_POSTGRES_VERSION]
 	-p, --port=PORT			[DEFAULT=(some free port)]
 	-s, --sql=FILE_OR_COMMAND	Alternative to positional arguments
 	-r, --remain-running		To access the container afterwards
@@ -44,8 +44,8 @@ if [[ ! "$VERBOSE" =~ ^-*[0-9]+$ ]]; then
 fi
 
 OPTIONS=$(getopt \
- -o 'b:m:p:s:rvVh' \
- --long 'base-data-dir:,postgres-version:,port:,sql:,remain-running,verbose,version,help' \
+ -o 'b:c:p:s:rvVh' \
+ --long 'base-data-dir:,container-version:,port:,sql:,remain-running,verbose,version,help' \
  -n "$0" -- "$@")
 
 if [ $? -ne 0 ]; then
@@ -66,7 +66,7 @@ while true; do
 			shift 2
 			continue
 		;;
-		'-m'|'--postgres-version')
+		'-c'|'--container-version')
 			POSTGRES_VERSION=$2
 			shift 2
 			continue

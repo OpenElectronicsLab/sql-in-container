@@ -21,11 +21,11 @@ $SCRIPT version $VERSION
 
 USAGE:
 
-	$0 ./dump-20240401.sql "SELECT COUNT(*) FROM t1"
+	$0 $(dirname $0)/example.sql "SELECT COUNT(*) FROM foo"
 
 OPTIONS:
 	-b, --var-mdb-dir=PATH		[DEFAULT=$DEFAULT_HOST_VAR_MDB_DIR]
-	-m, --mariadb-version=VERSION	[DEFAULT=$DEFAULT_MARIADB_VERSION]
+	-c, --contianer-version=VERSION	[DEFAULT=$DEFAULT_MARIADB_VERSION]
 	-d, --db-schema-name=NAME	[DEFAULT=$DEFAULT_DB_SCHEMA_NAME]
 	-p, --port=PORT			[DEFAULT=(some free port)]
 	-s, --sql=FILE_OR_COMMAND	Alternative to positional arguments
@@ -45,8 +45,8 @@ if [[ ! "$VERBOSE" =~ ^-*[0-9]+$ ]]; then
 fi
 
 OPTIONS=$(getopt \
- -o 'b:m:d:p:s:rvVh' \
- --long 'var-mdb-dir:,mariadb-version:,db-schema-name:,port:,sql:,remain-running,verbose,version,help' \
+ -o 'b:c:d:p:s:rvVh' \
+ --long 'var-mdb-dir:,contianer-version:,db-schema-name:,port:,sql:,remain-running,verbose,version,help' \
  -n "$0" -- "$@")
 
 if [ $? -ne 0 ]; then
@@ -67,7 +67,7 @@ while true; do
 			shift 2
 			continue
 		;;
-		'-m'|'--mariadb-version')
+		'-c'|'--contianer-version')
 			MARIADB_VERSION=$2
 			shift 2
 			continue

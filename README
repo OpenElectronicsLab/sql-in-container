@@ -16,21 +16,21 @@ options common to both scripts:
 sql-in-postgres-container
 -------------------------
 
-	./sql-in-postgres-container ./foo.sql "SELECT * FROM foo"
+	./sql-in-postgres-container ./example.sql "SELECT COUNT(*) FROM foo"
 
 specific options:
 	-b, --base-data-dir=PATH	[DEFAULT=./var/lib/postgresql/data]
-	-m, --postgres-version=VERSION	[DEFAULT=17]
+	-c, --container-version=VERSION	[DEFAULT=17]
 
 
 sql-in-mariadb-container
 ------------------------
 
-	sql-in-mariadb-container ./dump-20240401.sql "SELECT COUNT(*) FROM t1"
+	./sql-in-mariadb-container ./example.sql "SELECT COUNT(*) FROM foo"
 
 specific options:
 	-b, --var-mdb-dir=PATH		[DEFAULT=./var/mariadb]
-	-m, --mariadb-version=VERSION	[DEFAULT=10.11]
+	-c, --container-version=VERSION	[DEFAULT=10.11]
 	-d, --db-schema-name=NAME	[DEFAULT=test]
 
 License
