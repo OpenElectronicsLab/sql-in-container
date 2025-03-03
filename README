@@ -1,21 +1,37 @@
-sql-in-mariadb-container
+sql-in-container
+----------------
 
 	run sql commands and/or load sql files inside of a container
+	using either sql-in-postgres-container or sql-in-mariadb-container
 
-USAGE:
-
-	sql-in-mariadb-container ./dump-20240401.sql "SELECT COUNT(*) FROM t1"
-
-OPTIONS:
-	-b, --base-dir=PATH		[DEFAULT=./data]
-	-m, --mariadb-version=VERSION	[DEFAULT=10.11]
-	-d, --db-schema-name=NAME	[DEFAULT=test]
+options common to both scripts:
 	-p, --port=PORT			[DEFAULT=(some free port)]
 	-s, --sql=FILE_OR_COMMAND	Alternative to positional arguments
 	-r, --remain-running		To access the container afterwards
 	-v, --verbose
 	-V, --version			print the version and exit
 	-h, --help			print this message and exit
+
+
+sql-in-postgres-container
+-------------------------
+
+	./sql-in-postgres-container ./foo.sql "SELECT * FROM foo"
+
+specific options:
+	-b, --base-data-dir=PATH	[DEFAULT=./var/lib/postgresql/data]
+	-m, --postgres-version=VERSION	[DEFAULT=17]
+
+
+sql-in-mariadb-container
+------------------------
+
+	sql-in-mariadb-container ./dump-20240401.sql "SELECT COUNT(*) FROM t1"
+
+specific options:
+	-b, --var-mdb-dir=PATH		[DEFAULT=./var/mariadb]
+	-m, --mariadb-version=VERSION	[DEFAULT=10.11]
+	-d, --db-schema-name=NAME	[DEFAULT=test]
 
 License
 -------

@@ -19,6 +19,10 @@ $SCRIPT version $VERSION
 
 	run sql commands and/or load sql files inside of a container
 
+USAGE:
+
+	$0 ./foo.sql "SELECT * FROM foo"
+
 OPTIONS:
 	-b, --base-data-dir=PATH	[DEFAULT=$DEFAULT_HOST_DATA_DIR]
 	-m, --postgres-version=VERSION	[DEFAULT=$DEFAULT_POSTGRES_VERSION]
@@ -28,6 +32,10 @@ OPTIONS:
 	-v, --verbose
 	-V, --version			print $VERSION and exit
 	-h, --help			print this message and exit
+
+LICENSE:
+	GNU General Public License (GPL), version 3 or later.
+	https://www.gnu.org/licenses/gpl-3.0.txt
 EOF
 }
 

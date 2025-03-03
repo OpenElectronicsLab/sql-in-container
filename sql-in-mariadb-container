@@ -19,6 +19,10 @@ $SCRIPT version $VERSION
 
 	run sql commands and/or load sql files inside of a container
 
+USAGE:
+
+	$0 ./dump-20240401.sql "SELECT COUNT(*) FROM t1"
+
 OPTIONS:
 	-b, --var-mdb-dir=PATH		[DEFAULT=$DEFAULT_HOST_VAR_MDB_DIR]
 	-m, --mariadb-version=VERSION	[DEFAULT=$DEFAULT_MARIADB_VERSION]
@@ -29,6 +33,10 @@ OPTIONS:
 	-v, --verbose
 	-V, --version			print $VERSION and exit
 	-h, --help			print this message and exit
+
+LICENSE:
+	GNU General Public License (GPL), version 3 or later.
+	https://www.gnu.org/licenses/gpl-3.0.txt
 EOF
 }
 
